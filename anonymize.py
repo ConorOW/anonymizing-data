@@ -1,7 +1,7 @@
 """
 Filename Anonymisation
 ======================
-Reads our NF1 metadata CSV/Excel file containing file paths to brain scans and jsons,
+Reads our metadata CSV/Excel file containing file paths to brain scans and jsons,
 finds and replaces patient names in those paths with subject IDs;
 writes an annotated output CSV; If chosen, renames the file and folders on disk.
 
@@ -61,8 +61,8 @@ HERE = Path(__file__).parent
 # Configuration
 # ---------------------------------------------------------------------------
 
-# Where to write the output CSV (always saved next to this script)
-OUTPUT_CSV = HERE / 'anonymized_data.csv'
+# Where to write the output file (always saved next to this script)
+OUTPUT_FILE = HERE / 'anonymized_metadata.xlsx'
 
 # DRY_RUN = True  → show what would be renamed but don't touch any files
 # DRY_RUN = False → actually rename files and folders on disk
@@ -79,10 +79,10 @@ INCLUDE_ORIGINAL = True
 # ---------------------------------------------------------------------------
 
 def anonymize_filepath(filepath, subject_id):
-    """Compute the anonymized version of a file path.
+    """Generate the anonymized version of a file path.
 
     Walks through each component of the path looking for the ID of the subject
-    which has been provided by the user.
+    which is in the column that has been provided by the user via input().
 
     The folder immediately after subject ID is expected to be in the format
     PatientName-YYYY.MM.DD. The function extracts just the name portion
@@ -109,6 +109,7 @@ def anonymize_filepath(filepath, subject_id):
     #   →  ('/', 'data', 'P1001', 'Marcus_Aurelius-2024.03.15', 'file.nii')
     parts = Path(filepath).parts
 
+    # Loop over each of the parts
     for i, part in enumerate(parts):
 
         # Find the component that matches the subject ID
@@ -123,16 +124,17 @@ def anonymize_filepath(filepath, subject_id):
             # The (.*)$ at the end allows for any trailing characters after the date.
             match = re.match(r'^(.+?)(-\d{4}\.\d{2}\.\d{2}.*)$', name_date_field)
 
+
             if match:
                 name_only = match.group(1)  # e.g. 'Marcus_Aurelius'
-                # Replace all occurrences of the patient name in the full path.
-                # This handles both the folder name and the filename in one call.
+                # Replace all occurrences of the patient name in the full path
+                # including folder name and the filename.
                 return filepath.replace(name_only, subject_id)
 
             # The folder exists but doesn't follow the expected Name-date format
             return filepath
 
-    # subject_id was not found anywhere in the path — nothing to anonymize
+    # subject ID was not found anywhere in the path — nothing to anonymize
     return filepath
 
 
@@ -144,11 +146,15 @@ def anonymize_columns(df, id_column, columns):
       - <col>_rename_cmd  : the shell 'mv' command that performs the rename
                             (useful as an audit trail in the output CSV)
 
-    The original DataFrame is not modified — a copy is returned.
+    Original DataFrame is not modified — a copy is returned.
     """
+
+    # Create a copy to work with
     df = df.copy()
 
+    # Go over columns
     for col in columns:
+
         # Skip if the expected column isn't present (e.g. typo in config)
         if col not in df.columns:
             continue
@@ -156,15 +162,15 @@ def anonymize_columns(df, id_column, columns):
         anon_col = f'{col}_anonymized'  # e.g. 'nifti_path_anonymized'
         cmd_col  = f'{col}_rename_cmd'  # e.g. 'nifti_path_rename_cmd'
 
-        # Apply anonymize_filepath to every row, passing the subject ID from
-        # the id_column of the same row
+        # Apply anonymize_filepath to every row, passing 1) the filepath
+        # and 2) the subject ID from the same row
         df[anon_col] = df.apply(
             lambda row: anonymize_filepath(str(row[col]), str(row[id_column])),
             axis=1,
         )
 
         # Build a shell mv command for each row so the output CSV records
-        # exactly what rename was (or would be) performed
+        # exactly what rename was (or would be) performed (if DRY_RUN == True)
         df[cmd_col] = df.apply(
             lambda row: f'mv "{row[col]}" "{row[anon_col]}"',
             axis=1,
@@ -183,18 +189,25 @@ def rename_files(df, columns, dry_run=True):
     empty (all its files have been moved out) it is deleted automatically.
 
     A summary DataFrame is returned recording the status of every operation:
-      dry_run          — would rename (DRY_RUN=True, no files touched)
+      dry_run          — DRY_RUN=True, no files touched
       renamed          — file successfully renamed
       source_not_found — original file does not exist on disk
       no_change        — source and destination paths are identical
       target_exists    — destination already exists (skipped to avoid overwrite)
       error: <msg>     — an unexpected exception occurred
     """
+
+    # Initialize empty list
     results = []
 
+    # Loop over columns submitted for anonymization
     for col in columns:
+
+        # Set the name for our anonymized column
         anon_col = f'{col}_anonymized'
 
+        # Loops over a DataFrame row by row, returning index number and row's data as
+        # pandas series
         for idx, row in df.iterrows():
             src = Path(row[col])        # original file path (absolute)
             dst = Path(row[anon_col])   # anonymized file path (absolute)
@@ -204,7 +217,7 @@ def rename_files(df, columns, dry_run=True):
                 status = 'source_not_found'
 
             elif src == dst:
-                # Path unchanged — nothing to do (name may already be anonymized)
+                # Path unchanged — nothing to do as no anoymization took place
                 status = 'no_change'
 
             elif dst.exists():
@@ -217,7 +230,7 @@ def rename_files(df, columns, dry_run=True):
 
             else:
                 try:
-                    # Create the destination folder if it doesn't exist yet
+                    # Create the destination folder
                     # (e.g. P1001-2024.03.15/ needs to be created before moving the file)
                     dst.parent.mkdir(parents=True, exist_ok=True)
 
@@ -225,12 +238,11 @@ def rename_files(df, columns, dry_run=True):
                     # so we can check whether to delete it afterward
                     old_parent = src.parent
 
-                    # Perform the actual rename/move
+                    # Perform the rename/move
                     src.rename(dst)
 
                     # If the old name folder is now empty, remove it.
-                    # The guard (old_parent != dst.parent) prevents deleting
-                    # a folder that is also the destination.
+                    # old_parent != dst.parent prevents deleting a folder that is also the destination.
                     if old_parent != dst.parent and not any(old_parent.iterdir()):
                         old_parent.rmdir()
 
@@ -251,8 +263,8 @@ def rename_files(df, columns, dry_run=True):
     return pd.DataFrame(results)
 
 
-def save_csv(df, output_path, include_original):
-    """Write the annotated DataFrame to a CSV file.
+def save_output(df, output_path, include_original):
+    """Write the annotated DataFrame to an Excel file.
 
     If include_original is False, any column that has a corresponding
     *_anonymized version is dropped — only the anonymized columns are kept.
@@ -267,7 +279,7 @@ def save_csv(df, output_path, include_original):
         keep = [c for c in df.columns if c not in original_names] + anon_cols
         df = df[keep]
 
-    df.to_csv(output_path, index=False)
+    df.to_excel(output_path, index=False)
 
 
 # ---------------------------------------------------------------------------
@@ -292,7 +304,7 @@ def prompt_input_file():
     """Prompt the user to enter the path to a metadata file.
 
     Keeps re-prompting until a valid, supported file is provided.
-    Tab-completion is available (set up at module load time above).
+    Tab-completion is available (set up at beginning).
     """
     while True:
         raw = input('Enter path to metadata file (CSV or XLSX): ').strip()
@@ -387,8 +399,8 @@ def main():
     # Step 6: rename (or dry-run preview) files on disk
     rename_files(df_anon, path_columns, dry_run=dry_run)
 
-    # Step 7: save the annotated DataFrame to CSV
-    save_csv(df_anon, OUTPUT_CSV, include_original=INCLUDE_ORIGINAL)
+    # Step 7: save the annotated DataFrame to Excel
+    save_output(df_anon, OUTPUT_FILE, include_original=INCLUDE_ORIGINAL)
 
 
 if __name__ == '__main__':
