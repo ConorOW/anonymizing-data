@@ -1,0 +1,395 @@
+"""
+Filename Anonymisation
+======================
+Reads our NF1 metadata CSV/Excel file containing file paths to brain scans and jsons,
+finds and replaces patient names in those paths with subject IDs;
+writes an annotated output CSV; If chosen, renames the file and folders on disk.
+
+Expected path structure in the metadata file:
+    .../subject_ID/PatientName-YYYY.MM.DD/PatientName-YYYY.MM.DD_scaninfo.nii
+
+After anonymisation:
+    .../subject_ID/subject_id-YYYY.MM.DD/subject_id-YYYY.MM.DD_scaninfo.nii
+"""
+
+import re                  # regular expressions — used to detect the Name-YYYY.MM.DD pattern
+import glob                # file path expansion — used for tab-completion
+import readline            # GNU readline — enables tab-completion in input() prompts
+import pandas as pd        # Pandas for dataframe manipulation
+from pathlib import Path   # Path for working with file paths
+
+
+# ---------------------------------------------------------------------------
+# Quick function to get Tab-completion set up
+# ---------------------------------------------------------------------------
+
+def _setup_tab_completion():
+    """Enable file path tab-completion when the script prompts for input.
+
+    Python's built-in input() has no tab-completion by default.
+    Here we register a custom completer with the readline library so that
+    pressing Tab expands partial file paths, just like in a normal terminal.
+    """
+
+    # Set function name and inputs
+    def path_completer(text, state):
+
+        # Expand the partial path typed by user into all matching filesystem entries
+        matches = glob.glob(text + '*')
+
+        # Append '/' to directories so Tab keeps drilling into them
+        matches = [m + '/' if Path(m).is_dir() else m for m in matches]
+
+        # readline calls this repeatedly with state=0,1,2,... until None is returned
+        return matches[state] if state < len(matches) else None
+
+    readline.set_completer(path_completer)
+
+    # 'tab: complete' is the readline binding that triggers the completer on Tab
+    readline.parse_and_bind('tab: complete')
+
+
+# Run tab-completion setup immediately when the script is run
+_setup_tab_completion()
+
+# The directory containing this script — used to build absolute output paths
+# so the script works regardless of which directory it is run from.
+HERE = Path(__file__).parent
+
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+# Where to write the output CSV (always saved next to this script)
+OUTPUT_CSV = HERE / 'anonymized_data.csv'
+
+# DRY_RUN = True  → show what would be renamed but don't touch any files
+# DRY_RUN = False → actually rename files and folders on disk
+DRY_RUN = True
+
+# INCLUDE_ORIGINAL = True  → keep the original path columns in the output CSV
+#                            alongside the new anonymized columns (useful for audit)
+# INCLUDE_ORIGINAL = False → drop original path columns, output only anonymized ones
+INCLUDE_ORIGINAL = True
+
+
+# ---------------------------------------------------------------------------
+# Core functions
+# ---------------------------------------------------------------------------
+
+def anonymize_filepath(filepath, subject_id):
+    """Compute the anonymized version of a file path.
+
+    Walks through each component of the path looking for the ID of the subject
+    which has been provided by the user.
+
+    The folder immediately after subject ID is expected to be in the format
+    PatientName-YYYY.MM.DD. The function extracts just the name portion
+    (everything before the date), then replaces every occurrence of that
+    name in the full path string with subject ID — this renames both the
+    folder and the filename in one step while preserving the date.
+
+    Example:
+        /data/P1001/Marcus_Aurelius-2024.03.15/Marcus_Aurelius-2024.03.15_T1.nii
+      → /data/P1001/P1001-2024.03.15/P1001-2024.03.15_T1.nii
+
+    Returns the original filepath unchanged (with a warning) if:
+      - the value is NaN / missing
+      - subject ID is not found anywhere in the path
+      - the folder after subject ID doesn't match the expected Name-date pattern
+    """
+
+    # Skip rows with missing path values
+    if pd.isna(filepath) or str(filepath) == 'nan':
+        return filepath
+
+    # Split the path into its individual folder/file components
+    # e.g. '/data/P1001/Marcus_Aurelius-2024.03.15/file.nii'
+    #   →  ('/', 'data', 'P1001', 'Marcus_Aurelius-2024.03.15', 'file.nii')
+    parts = Path(filepath).parts
+
+    for i, part in enumerate(parts):
+
+        # Find the component that matches the subject ID
+        # Also ensure there is at least one more component after it
+        # (i.e. it's not the filename itself)
+        if part == subject_id and i + 1 < len(parts) - 1:
+            name_date_field = parts[i + 1]  # e.g. 'Marcus_Aurelius-2024.03.15'
+
+            # Match the Name-YYYY.MM.DD pattern.
+            # Group 1 captures everything up to the date (the patient name).
+            # Group 2 captures the date suffix including the leading dash.
+            # The (.*)$ at the end allows for any trailing characters after the date.
+            match = re.match(r'^(.+?)(-\d{4}\.\d{2}\.\d{2}.*)$', name_date_field)
+
+            if match:
+                name_only = match.group(1)  # e.g. 'Marcus_Aurelius'
+                # Replace all occurrences of the patient name in the full path.
+                # This handles both the folder name and the filename in one call.
+                return filepath.replace(name_only, subject_id)
+
+            # The folder exists but doesn't follow the expected Name-date format
+            return filepath
+
+    # subject_id was not found anywhere in the path — nothing to anonymize
+    return filepath
+
+
+def anonymize_columns(df, id_column, columns):
+    """Add anonymized path columns and rename-command columns to the DataFrame.
+
+    For each column in `columns`, two new columns are added:
+      - <col>_anonymized  : the anonymized file path
+      - <col>_rename_cmd  : the shell 'mv' command that performs the rename
+                            (useful as an audit trail in the output CSV)
+
+    The original DataFrame is not modified — a copy is returned.
+    """
+    df = df.copy()
+
+    for col in columns:
+        # Skip if the expected column isn't present (e.g. typo in config)
+        if col not in df.columns:
+            continue
+
+        anon_col = f'{col}_anonymized'  # e.g. 'nifti_path_anonymized'
+        cmd_col  = f'{col}_rename_cmd'  # e.g. 'nifti_path_rename_cmd'
+
+        # Apply anonymize_filepath to every row, passing the subject ID from
+        # the id_column of the same row
+        df[anon_col] = df.apply(
+            lambda row: anonymize_filepath(str(row[col]), str(row[id_column])),
+            axis=1,
+        )
+
+        # Build a shell mv command for each row so the output CSV records
+        # exactly what rename was (or would be) performed
+        df[cmd_col] = df.apply(
+            lambda row: f'mv "{row[col]}" "{row[anon_col]}"',
+            axis=1,
+        )
+
+    return df
+
+
+def rename_files(df, columns, dry_run=True):
+    """Rename files (and clean up empty folders) on disk.
+
+    Iterates over every row and path column, resolving the source and
+    destination paths, then either previews or performs the rename.
+
+    After each rename the old patient-name folder is checked: if it is now
+    empty (all its files have been moved out) it is deleted automatically.
+
+    A summary DataFrame is returned recording the status of every operation:
+      dry_run          — would rename (DRY_RUN=True, no files touched)
+      renamed          — file successfully renamed
+      source_not_found — original file does not exist on disk
+      no_change        — source and destination paths are identical
+      target_exists    — destination already exists (skipped to avoid overwrite)
+      error: <msg>     — an unexpected exception occurred
+    """
+    results = []
+
+    for col in columns:
+        anon_col = f'{col}_anonymized'
+
+        for idx, row in df.iterrows():
+            src = Path(row[col])        # original file path (absolute)
+            dst = Path(row[anon_col])   # anonymized file path (absolute)
+
+            if not src.exists():
+                # File missing — log and move on without crashing
+                status = 'source_not_found'
+
+            elif src == dst:
+                # Path unchanged — nothing to do (name may already be anonymized)
+                status = 'no_change'
+
+            elif dst.exists():
+                # Destination already exists — skip to avoid accidentally overwriting
+                status = 'target_exists'
+
+            elif dry_run:
+                # Dry run — record what would happen but don't touch the filesystem
+                status = 'dry_run'
+
+            else:
+                try:
+                    # Create the destination folder if it doesn't exist yet
+                    # (e.g. P1001-2024.03.15/ needs to be created before moving the file)
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+
+                    # Save the source's parent folder before renaming
+                    # so we can check whether to delete it afterward
+                    old_parent = src.parent
+
+                    # Perform the actual rename/move
+                    src.rename(dst)
+
+                    # If the old name folder is now empty, remove it.
+                    # The guard (old_parent != dst.parent) prevents deleting
+                    # a folder that is also the destination.
+                    if old_parent != dst.parent and not any(old_parent.iterdir()):
+                        old_parent.rmdir()
+
+                    status = 'renamed'
+
+                except Exception as e:
+                    status = f'error: {str(e)}'
+
+            # Record the outcome for every row so we can summarise at the end
+            results.append({
+                'row': idx,
+                'column': col,
+                'original': str(src),
+                'anonymized': str(dst),
+                'status': status,
+            })
+
+    return pd.DataFrame(results)
+
+
+def save_csv(df, output_path, include_original):
+    """Write the annotated DataFrame to a CSV file.
+
+    If include_original is False, any column that has a corresponding
+    *_anonymized version is dropped — only the anonymized columns are kept.
+    This keeps the output tidy when the original paths are no longer needed.
+    """
+    if not include_original:
+        # Find all the newly added anonymized columns
+        anon_cols = [c for c in df.columns if c.endswith('_anonymized')]
+        # Work out which original columns they replaced
+        original_names = {c.replace('_anonymized', '') for c in anon_cols}
+        # Keep everything except the original path columns, then append anonymized cols
+        keep = [c for c in df.columns if c not in original_names] + anon_cols
+        df = df[keep]
+
+    df.to_csv(output_path, index=False)
+
+
+# ---------------------------------------------------------------------------
+# Interactive input helpers
+# ---------------------------------------------------------------------------
+
+def load_metadata(path):
+    """Load a metadata file into a pandas DataFrame.
+
+    Supports .csv and .xlsx / .xls formats.
+    Raises FileNotFoundError if the path doesn't exist.
+    """
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f'File not found: {path}')
+    if path.suffix in ('.xlsx', '.xls'):
+        return pd.read_excel(path)
+    return pd.read_csv(path)
+
+
+def prompt_input_file():
+    """Prompt the user to enter the path to a metadata file.
+
+    Keeps re-prompting until a valid, supported file is provided.
+    Tab-completion is available (set up at module load time above).
+    """
+    while True:
+        raw = input('Enter path to metadata file (CSV or XLSX): ').strip()
+        path = Path(raw)
+        if not path.exists():
+            print(f'  File not found: {path}')
+        elif path.suffix not in ('.csv', '.xlsx', '.xls'):
+            print(f'  Unsupported format "{path.suffix}" — please provide a .csv or .xlsx file.')
+        else:
+            return path
+
+
+def prompt_column_choice(columns, prompt):
+    """Display a numbered list of column names and return the one the user picks.
+
+    Used for single-selection questions (e.g. which column is the subject ID).
+    Re-prompts until a valid number is entered.
+    """
+    print(f'\n{prompt}')
+    for i, col in enumerate(columns):
+        print(f'  [{i}] {col}')
+    while True:
+        raw = input('Enter number: ').strip()
+        if raw.isdigit() and int(raw) < len(columns):
+            return columns[int(raw)]
+        print(f'  Please enter a number between 0 and {len(columns) - 1}.')
+
+
+def prompt_path_columns(columns):
+    """Display a numbered list of columns and return the ones the user selects.
+
+    Used for multi-selection (e.g. which columns contain file paths).
+    The user can select multiple columns by entering space-separated numbers.
+    Re-prompts until at least one valid selection is made.
+    """
+    print('\nWhich columns contain file paths to anonymize?')
+    for i, col in enumerate(columns):
+        print(f'  [{i}] {col}')
+    print('Enter column numbers separated by spaces (e.g. 1 3):')
+    while True:
+        raw = input('> ').strip()
+        indices = raw.split()
+        if all(idx.isdigit() and int(idx) < len(columns) for idx in indices) and indices:
+            return [columns[int(idx)] for idx in indices]
+        print(f'  Please enter valid numbers between 0 and {len(columns) - 1}.')
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main():
+    # Step 1: ask the user for the input metadata file
+    input_path = prompt_input_file()
+    df = load_metadata(input_path)
+
+    columns = list(df.columns)
+
+    # Step 2: ask which column holds the subject IDs
+    # (used to replace patient names in file paths)
+    id_column = prompt_column_choice(columns, 'Which column contains the subject ID?')
+
+    # Step 3: ask which columns contain file paths to anonymize
+    path_columns = prompt_path_columns(columns)
+
+    # Step 4: compute anonymized paths and rename commands, added as new columns
+    df_anon = anonymize_columns(df, id_column, path_columns)
+
+    # Step 5: confirm whether to do a dry run or rename for real
+    print('\nRun mode:')
+    print('  [0] Dry run — compute anonymized paths only, do not rename any files')
+    print('  [1] Live run — rename files and folders on disk')
+    while True:
+        mode = input('Enter number: ').strip()
+        if mode == '0':
+            dry_run = True
+            break
+        elif mode == '1':
+            dry_run = False
+            break
+        print('  Please enter 0 or 1.')
+
+    if not dry_run:
+        # Extra confirmation before touching any files on disk
+        print(f'\nAbout to rename files for {len(df_anon)} rows across {len(path_columns)} column(s).')
+        print('This cannot be undone automatically. Type YES to proceed: ', end='')
+        confirm = input().strip()
+        if confirm != 'YES':
+            print('Aborted — no files were renamed.')
+            dry_run = True  # fall back to dry run so the CSV is still saved
+
+    # Step 6: rename (or dry-run preview) files on disk
+    rename_files(df_anon, path_columns, dry_run=dry_run)
+
+    # Step 7: save the annotated DataFrame to CSV
+    save_csv(df_anon, OUTPUT_CSV, include_original=INCLUDE_ORIGINAL)
+
+
+if __name__ == '__main__':
+    main()
