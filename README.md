@@ -1,6 +1,6 @@
 # MRI Data Anonymisation & QC Toolkit
 
-A set of Python scripts for anonymising neuroimaging datasets and visually quality-checking brain scans in a web browser. Designed for BIDS-compatible T1w MRI data.
+A set of Python scripts for anonymising neuroimaging datasets and visually quality-checking brain scans in a web browser.
 
 ---
 
