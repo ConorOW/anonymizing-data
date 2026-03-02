@@ -8,7 +8,7 @@ A set of Python scripts for anonymising neuroimaging datasets and visually quali
 
 ### 1. `anonymize.py` — File Path Anonymisation
 
-Reads a metadata spreadsheet (CSV or Excel) containing file paths to brain scans, detects patient names embedded in those paths, and replaces them with subject IDs. Optionally renames the files and folders on disk.
+Reads a metadata spreadsheet (CSV or Excel) containing file paths relating to MRI data (niftis or json metadata), detects patient names embedded in those paths, and replaces them with subject IDs. Optionally renames the files and folders on disk.
 
 **Expected path structure:**
 ```
@@ -42,10 +42,10 @@ The script will prompt you to:
 
 ### 2. `qc_report.py` — Visual QC Report Generator
 
-Generates a self-contained HTML report for visually inspecting T1w brain scans in a web browser. For each scan, it displays axial, coronal, and sagittal middle slices alongside key acquisition metadata. Scans from the same subject are colour-grouped for easy visual comparison.
+Generates a self-contained HTML report for visually inspecting T1w brain scans in a web browser. For each scan, middle slices for axial, coronal, and sagittal planes are visualized alongside key acquisition metadata. Scans from the same subject are colour-grouped for easy visual comparison.
 
 **Features:**
-- Reads NIfTI (`.nii` / `.nii.gz`) and JSON sidecar paths from a spreadsheet
+- Reads NIfTI (`.nii` / `.nii.gz`) and JSON sidecar paths from a spreadsheet that is fed to script
 - Corrects for non-isotropic voxels so slices are not squashed
 - Embeds all images directly in the HTML — no external files needed
 - Groups multiple scans per subject with a shared background colour
@@ -87,9 +87,9 @@ pip install nibabel numpy Pillow pandas openpyxl
 
 ---
 
-### 3. `create_mock_files.py` — Test Dataset Generator
+### 3. (Additional) `create_mock_files.py` — Test Dataset Generator
 
-Creates empty placeholder NIfTI files at the paths listed in `metadata-example.csv`. Run this once to set up a test dataset before running `anonymize.py`, without needing real scan data.
+This is a script that ca be used to create mock files and experiment with the file anoymization script - if you are feeling nervy. It creates empty placeholder NIfTI files at the paths listed in `metadata-example.csv`. Run this once to set up a test dataset before running `anonymize.py`, without needing real scan data.
 
 **Usage:**
 ```bash
@@ -119,7 +119,7 @@ pip install nibabel numpy Pillow pandas openpyxl
 ## Typical Workflow
 
 ```
-1. create_mock_files.py   →   set up a test dataset from metadata-example.csv
+1. create_mock_files.py   →   IF NEEDED: set up a test dataset from metadata-example.csv for experimentation
 2. anonymize.py           →   replace patient names in file paths with subject IDs
 3. qc_report.py           →   visually inspect scans before sharing the dataset
 ```
