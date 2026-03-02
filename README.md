@@ -1,0 +1,125 @@
+# MRI Data Anonymisation & QC Toolkit
+
+A set of Python scripts for anonymising neuroimaging datasets and visually quality-checking brain scans in a web browser. Designed for BIDS-compatible T1w MRI data.
+
+---
+
+## Scripts
+
+### 1. `anonymize.py` — File Path Anonymisation
+
+Reads a metadata spreadsheet (CSV or Excel) containing file paths to brain scans, detects patient names embedded in those paths, and replaces them with subject IDs. Optionally renames the files and folders on disk.
+
+**Expected path structure:**
+```
+.../subject_ID/PatientName-YYYY.MM.DD/PatientName-YYYY.MM.DD_scaninfo.nii
+```
+**After anonymisation:**
+```
+.../subject_ID/subject_ID-YYYY.MM.DD/subject_ID-YYYY.MM.DD_scaninfo.nii
+```
+
+**Usage:**
+```bash
+python anonymize.py
+```
+
+The script will prompt you to:
+1. Provide the path to your metadata file (`.csv` or `.xlsx`)
+2. Select which column contains the subject IDs
+3. Select which columns contain file paths to anonymise
+4. Choose between a **dry run** (preview only) or a **live run** (rename files on disk)
+
+**Output:** An annotated Excel file (`anonymized_metadata.xlsx`) with the original paths, anonymised paths, and the `mv` shell command for each rename.
+
+**Key settings** (edit at the top of the script):
+| Variable | Default | Description |
+|---|---|---|
+| `DRY_RUN` | `True` | Set to `False` to actually rename files |
+| `INCLUDE_ORIGINAL` | `True` | Include original paths in the output file |
+
+---
+
+### 2. `qc_report.py` — Visual QC Report Generator
+
+Generates a self-contained HTML report for visually inspecting T1w brain scans in a web browser. For each scan, it displays axial, coronal, and sagittal middle slices alongside key acquisition metadata. Scans from the same subject are colour-grouped for easy visual comparison.
+
+**Features:**
+- Reads NIfTI (`.nii` / `.nii.gz`) and JSON sidecar paths from a spreadsheet
+- Corrects for non-isotropic voxels so slices are not squashed
+- Embeds all images directly in the HTML — no external files needed
+- Groups multiple scans per subject with a shared background colour
+- Shows file paths (truncated for readability, full path on hover)
+
+**Usage:**
+```bash
+python qc_report.py
+```
+
+The script will prompt you to:
+1. Provide the path to your metadata file (`.csv` or `.xlsx`)
+2. Select which column contains the **subject ID** (used for colour grouping)
+3. Select which column contains the **NIfTI paths**
+4. Select which column contains the **JSON sidecar paths**
+
+**Output:** `qc_report.html` — open in any web browser.
+
+```bash
+open qc_report.html
+```
+
+**Metadata displayed per scan:**
+
+| Field | Source |
+|---|---|
+| Dimensions (voxels) | NIfTI header |
+| Voxel Size (mm) | NIfTI header |
+| NIfTI / JSON paths | Input spreadsheet |
+| Slice Thickness | JSON sidecar |
+| Manufacturer & Model | JSON sidecar |
+| Field Strength | JSON sidecar |
+| Series / Protocol Name | JSON sidecar |
+
+**Dependencies:**
+```bash
+pip install nibabel numpy Pillow pandas openpyxl
+```
+
+---
+
+### 3. `create_mock_files.py` — Test Dataset Generator
+
+Creates empty placeholder NIfTI files at the paths listed in `metadata-example.csv`. Run this once to set up a test dataset before running `anonymize.py`, without needing real scan data.
+
+**Usage:**
+```bash
+python create_mock_files.py
+```
+
+Reads `metadata-example.csv` from the same folder and creates empty files at every path listed in the `nifti_path` column, including any intermediate folders.
+
+---
+
+## Requirements
+
+- Python 3.8+
+- [nibabel](https://nipy.org/nibabel/) — reading NIfTI brain scan files
+- [numpy](https://numpy.org/) — array operations on image data
+- [Pillow](https://pillow.readthedocs.io/) — image processing and PNG export
+- [pandas](https://pandas.pydata.org/) — reading CSV / Excel spreadsheets
+- [openpyxl](https://openpyxl.readthedocs.io/) — Excel file support for pandas
+
+Install all dependencies:
+```bash
+pip install nibabel numpy Pillow pandas openpyxl
+```
+
+---
+
+## Typical Workflow
+
+```
+1. create_mock_files.py   →   set up a test dataset from metadata-example.csv
+2. anonymize.py           →   replace patient names in file paths with subject IDs
+3. qc_report.py           →   visually inspect scans before sharing the dataset
+```
