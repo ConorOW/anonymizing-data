@@ -279,7 +279,7 @@ def save_output(df, output_path, include_original):
         keep = [c for c in df.columns if c not in original_names] + anon_cols
         df = df[keep]
 
-    df.to_excel(output_path, index=False)
+    df.to_excel(output_path, index=False, na_rep="NA")
 
 
 # ---------------------------------------------------------------------------
@@ -289,7 +289,7 @@ def save_output(df, output_path, include_original):
 def load_metadata(path):
     """Load a metadata file into a pandas DataFrame.
 
-    Supports .csv and .xlsx / .xls formats.
+    Supports .csv and .xlsx/.xls formats.
     Raises FileNotFoundError if the path doesn't exist.
     """
     path = Path(path)
