@@ -3,7 +3,7 @@ Filename Anonymisation
 ======================
 Reads our metadata CSV/Excel file containing file paths to brain scans and jsons,
 finds and replaces patient names in those paths with subject IDs;
-writes an annotated output CSV; If chosen, renames the file and folders on disk.
+writes an annotated output CSV/xlsx; If chosen, renames the file and folders on disk.
 
 Expected path structure in the metadata file:
     .../subject_ID/PatientName-YYYY.MM.DD/PatientName-YYYY.MM.DD_scaninfo.nii
