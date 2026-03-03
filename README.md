@@ -26,13 +26,12 @@ python anonymize.py
 
 The script will prompt you to:
 1. Provide the path to your metadata file (`.csv` or `.xlsx`)
-2. Select which column contains the subject IDs
-3. Select which columns contain file paths to anonymise
-4. Choose between a **dry run** (preview only) or a **live run** (rename files on disk)
+2. Provide the path to the directory where the output file should be saved
+3. Select which column contains the subject IDs
+4. Select which columns contain file paths to anonymise
+5. Choose between a **dry run** (preview only) or a **live run** (rename files on disk)
 
-**Output:** An annotated Excel file (`anonymized_metadata.xlsx`) saved in the parent directory (one level above `scripts/`), containing the original paths, anonymised paths, and the `mv` shell command for each rename.
-
-> **Note:** This script expects to be run from a `scripts/` subfolder. Input metadata files should be placed in the parent directory (one level above `scripts/`). When prompted for a file path, use `../filename.csv` or `../filename.xlsx` to point to the parent directory.
+**Output:** An annotated Excel file (`anonymized_metadata.xlsx`) saved to the directory you specify, containing the original paths, anonymised paths, and the `mv` shell command for each rename.
 
 **Key settings** (edit at the top of the script):
 | Variable | Default | Description |
@@ -60,11 +59,12 @@ python qc_report.py
 
 The script will prompt you to:
 1. Provide the path to your metadata file (`.csv` or `.xlsx`)
-2. Select which column contains the **subject ID** (used for colour grouping)
-3. Select which column contains the **NIfTI paths**
-4. Select which column contains the **JSON sidecar paths**
+2. Provide the path to the directory where the output file should be saved
+3. Select which column contains the **subject ID** (used for colour grouping)
+4. Select which column contains the **NIfTI paths**
+5. Select which column contains the **JSON sidecar paths**
 
-**Output:** `qc_report.html` — open in any web browser.
+**Output:** `qc_report.html` saved to the directory you specify — open in any web browser.
 
 ```bash
 open qc_report.html
@@ -100,12 +100,11 @@ python check_anonymization.py
 
 The script will prompt you to:
 1. Provide the path to your anonymised metadata file (`.xlsx`)
-2. Select which column contains the subject IDs
-3. Select which columns contain the original file paths to check
+2. Provide the path to the directory where the output file should be saved
+3. Select which column contains the subject IDs
+4. Select which columns contain the original file paths to check
 
-**Output:** The input `.xlsx` file is updated in-place with a `<col>_check_status` column added for each checked column, containing `pass` or `fail` per row. A summary is also printed to the terminal.
-
-> **Note:** Both scripts expect to be run from a `scripts/` subfolder. Input metadata files and output `.xlsx` files should be placed in the parent directory (one level above `scripts/`). When prompted for a file path, use `../filename.xlsx` to point to the parent directory.
+**Output:** A new Excel file (`anonymized_metadata_checked.xlsx`) saved to the directory you specify, with a `<col>_check_status` column added for each checked column containing `pass` or `fail` per row. A summary is also printed to the terminal.
 
 ---
 
