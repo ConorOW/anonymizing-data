@@ -407,6 +407,11 @@ def _setup_tab_completion():
         return matches[state] if state < len(matches) else None  # readline calls this repeatedly; return None when done
 
     readline.set_completer(path_completer)       # register our completer function
+
+    # Only treat spaces as word delimiters so that path characters like '/' and '.'
+    # are passed through to the completer intact — this allows '../' to work
+    readline.set_completer_delims(' \t\n')
+
     readline.parse_and_bind('tab: complete')     # bind the Tab key to trigger completion
 
 

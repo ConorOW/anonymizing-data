@@ -45,6 +45,10 @@ def _setup_tab_completion():
 
     readline.set_completer(path_completer)
 
+    # Only treat spaces as word delimiters so that path characters like '/' and '.'
+    # are passed through to the completer intact — this allows '../' to work
+    readline.set_completer_delims(' \t\n')
+
     # 'tab: complete' is the readline binding that triggers the completer on Tab
     readline.parse_and_bind('tab: complete')
 
