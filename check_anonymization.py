@@ -92,6 +92,22 @@ def prompt_column_choice(columns, prompt):
         print(f'  Please enter a number between 0 and {len(columns) - 1}.')
 
 
+def prompt_output_dir():
+    """Ask the user where to save the output Excel file and keep asking until a valid directory is given.
+
+    Tab-completion is available. The directory must already exist.
+    """
+    while True:
+        raw = input('Enter path to output directory for the results file: ').strip()  # ask the user to type a folder path
+        path = Path(raw)
+        if not path.exists():                    # check the folder actually exists
+            print(f'  Directory not found: {path}')
+        elif not path.is_dir():                  # check it's a folder, not a file
+            print(f'  That path is a file, not a directory: {path}')
+        else:
+            return path                          # valid directory — return it and stop asking
+
+
 def prompt_path_columns(columns):
     """Display a numbered list and return the columns the user selects."""
 
@@ -223,16 +239,20 @@ def main():
 
     columns = list(df.columns)  # get the list of column names from the spreadsheet
 
-    # Step 2: ask which column holds the subject IDs
+    # Step 2: ask where to save the output Excel file
+    output_dir = prompt_output_dir()
+    output_file = output_dir / 'anonymized_metadata_checked.xlsx'
+
+    # Step 3: ask which column holds the subject IDs
     id_col = prompt_column_choice(columns, 'Which column contains the subject ID?')
 
-    # Step 3: ask which columns contain the original file paths to check
+    # Step 4: ask which columns contain the original file paths to check
     path_columns = prompt_path_columns(columns)
 
-    # Step 4: run the check, then save the results back to the same Excel file
+    # Step 5: run the check, then save the results to the specified output directory
     df_out = run_check(df, id_col, path_columns)
-    df_out.to_excel(input_path, index=False, na_rep='NA')  # overwrite the file with the updated table
-    print(f'\nResults saved to: {input_path}')
+    df_out.to_excel(output_file, index=False, na_rep='NA')  # save the updated table to the output file
+    print(f'\nResults saved to: {output_file}')
 
 
 # Only run main() if this script is being run directly (not imported by another script)

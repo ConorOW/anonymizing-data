@@ -52,17 +52,9 @@ def _setup_tab_completion():
 # Run tab-completion setup immediately when the script is run
 _setup_tab_completion()
 
-# The directory containing this script — used to build absolute output paths
-# so the script works regardless of which directory it is run from.
-HERE = Path(__file__).parent
-
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-
-# Where to write the output file (saved in the directory one level above the scripts folder)
-OUTPUT_FILE = HERE.parent / 'anonymized_metadata.xlsx'
 
 # DRY_RUN = True  → show what would be renamed but don't touch any files
 # DRY_RUN = False → actually rename files and folders on disk
@@ -300,6 +292,23 @@ def load_metadata(path):
     return pd.read_csv(path)
 
 
+def prompt_output_dir():
+    """Prompt the user to enter a directory to save the output Excel file.
+
+    Keeps re-prompting until an existing directory is provided.
+    Tab-completion is available.
+    """
+    while True:
+        raw = input('Enter path to output directory for anonymized_metadata.xlsx: ').strip()
+        path = Path(raw)
+        if not path.exists():
+            print(f'  Directory not found: {path}')
+        elif not path.is_dir():
+            print(f'  That path is a file, not a directory: {path}')
+        else:
+            return path
+
+
 def prompt_input_file():
     """Prompt the user to enter the path to a metadata file.
 
@@ -361,19 +370,23 @@ def main():
     input_path = prompt_input_file()
     df = load_metadata(input_path)
 
+    # Step 2: ask where to save the output Excel file
+    output_dir = prompt_output_dir()
+    output_file = output_dir / 'anonymized_metadata.xlsx'
+
     columns = list(df.columns)
 
-    # Step 2: ask which column holds the subject IDs
+    # Step 3: ask which column holds the subject IDs
     # (used to replace patient names in file paths)
     id_column = prompt_column_choice(columns, 'Which column contains the subject ID?')
 
-    # Step 3: ask which columns contain file paths to anonymize
+    # Step 4: ask which columns contain file paths to anonymize
     path_columns = prompt_path_columns(columns)
 
-    # Step 4: compute anonymized paths and rename commands, added as new columns
+    # Step 5: compute anonymized paths and rename commands, added as new columns
     df_anon = anonymize_columns(df, id_column, path_columns)
 
-    # Step 5: confirm whether to do a dry run or rename for real
+    # Step 6: confirm whether to do a dry run or rename for real
     print('\nRun mode:')
     print('  [0] Dry run — compute anonymized paths only, do not rename any files')
     print('  [1] Live run — rename files and folders on disk')
@@ -396,11 +409,11 @@ def main():
             print('Aborted — no files were renamed.')
             dry_run = True  # fall back to dry run so the CSV is still saved
 
-    # Step 6: rename (or dry-run preview) files on disk
+    # Step 7: rename (or dry-run preview) files on disk
     rename_files(df_anon, path_columns, dry_run=dry_run)
 
-    # Step 7: save the annotated DataFrame to Excel
-    save_output(df_anon, OUTPUT_FILE, include_original=INCLUDE_ORIGINAL)
+    # Step 8: save the annotated DataFrame to Excel
+    save_output(df_anon, output_file, include_original=INCLUDE_ORIGINAL)
 
 
 if __name__ == '__main__':

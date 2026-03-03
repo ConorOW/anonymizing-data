@@ -58,10 +58,6 @@ CARD_COLORS = [
     ('#2a1c1c', '#321e1e'),  # red
 ]
 
-# The folder that contains this script — used to save the output HTML file
-# in the same place as the script, regardless of where the user runs it from
-HERE = Path(__file__).parent
-
 # ---------------------------------------------------------------------------
 # NIfTI processing
 # ---------------------------------------------------------------------------
@@ -430,6 +426,22 @@ def prompt_input_file():
             return path                          # valid file — return it and stop asking
 
 
+def prompt_output_dir():
+    """Ask the user where to save the output HTML report and keep asking until a valid directory is given.
+
+    Tab-completion is available. The directory must already exist.
+    """
+    while True:
+        raw = input('Enter path to output directory for qc_report.html: ').strip()  # ask user to type a folder path
+        path = Path(raw)
+        if not path.exists():                    # check the folder actually exists
+            print(f'  Directory not found: {path}')
+        elif not path.is_dir():                  # check it's a folder, not a file
+            print(f'  That path is a file, not a directory: {path}')
+        else:
+            return path                          # valid directory — return it and stop asking
+
+
 def prompt_column_choice(columns, prompt):
     """Show a numbered list of column names and return whichever the user selects.
 
@@ -468,7 +480,10 @@ def main():
     df = load_metadata(input_path)               # load it into a DataFrame
     columns = list(df.columns)                   # get the list of column names to show the user
 
-    # Step 2: ask which columns hold the subject ID, NIfTI path, and JSON path
+    # Step 2: ask where to save the output HTML report
+    output_dir = prompt_output_dir()
+
+    # Step 3: ask which columns hold the subject ID, NIfTI path, and JSON path
     id_col   = prompt_column_choice(columns, 'Which column contains the subject ID?')
     nii_col  = prompt_column_choice(columns, 'Which column contains the NIfTI paths?')
     json_col = prompt_column_choice(columns, 'Which column contains the JSON sidecar paths?')
@@ -510,8 +525,8 @@ def main():
         print('No subjects successfully processed.')
         return
 
-    # Write the finished HTML report next to this script
-    output_path = HERE / 'qc_report.html'
+    # Write the finished HTML report to the directory the user specified
+    output_path = output_dir / 'qc_report.html'
     output_path.write_text(generate_html(subjects), encoding='utf-8')  # save as UTF-8 text
     print(f'\nReport written to: {output_path.resolve()}')
     print(f'Open in browser:   open "{output_path.resolve()}"')
