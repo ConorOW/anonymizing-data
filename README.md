@@ -87,7 +87,25 @@ pip install nibabel numpy Pillow pandas openpyxl
 
 ---
 
-### 3. (Additional) `create_mock_files.py` — Test Dataset Generator
+### 3. `check_anonymization.py` — Anonymisation Verification
+
+Verifies that patient names have been successfully removed from anonymised file paths. Loads the output Excel file from `anonymize.py`, extracts the patient name from each original path using the same `Name-YYYY.MM.DD` pattern, and confirms it is absent from the corresponding anonymised path. Results are written back to the Excel file as a `_check_status` column per checked path column.
+
+**Usage:**
+```bash
+python check_anonymization.py
+```
+
+The script will prompt you to:
+1. Provide the path to your anonymised metadata file (`.xlsx`)
+2. Select which column contains the subject IDs
+3. Select which columns contain the original file paths to check
+
+**Output:** The input `.xlsx` file is updated in-place with a `<col>_check_status` column added for each checked column, containing `pass` or `fail` per row. A summary is also printed to the terminal.
+
+---
+
+### 4. (Additional) `create_mock_files.py` — Test Dataset Generator
 
 This is a script that ca be used to create mock files and experiment with the file anoymization script - if you are feeling nervy. It creates empty placeholder NIfTI files at the paths listed in `metadata-example.csv`. Run this once to set up a test dataset before running `anonymize.py`, without needing real scan data.
 
@@ -119,7 +137,8 @@ pip install nibabel numpy Pillow pandas openpyxl
 ## Typical Workflow
 
 ```
-1. create_mock_files.py   →   IF NEEDED: set up a test dataset from metadata-example.csv for experimentation
-2. anonymize.py           →   replace patient names in file paths with subject IDs
-3. qc_report.py           →   visually inspect scans before sharing the dataset
+1. create_mock_files.py      →   IF NEEDED: set up a test dataset from metadata-example.csv for experimentation
+2. anonymize.py              →   replace patient names in file paths with subject IDs
+3. check_anonymization.py    →   verify no patient names remain in the anonymised paths
+4. qc_report.py              →   visually inspect scans before sharing the dataset
 ```
