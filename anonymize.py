@@ -255,6 +255,100 @@ def rename_files(df, columns, dry_run=True):
     return pd.DataFrame(results)
 
 
+def extract_patient_name(filepath, subject_id):
+    """Return the patient name found in filepath, or None if not extractable.
+
+    Uses the same Name-YYYY.MM.DD pattern as anonymize_filepath so we are
+    checking for exactly what was replaced during anonymization.
+    """
+
+    # Split the file path into its individual folder/file components
+    parts = Path(str(filepath)).parts
+
+    # Walk through each component looking for the subject ID folder
+    for i, part in enumerate(parts):
+
+        # When we find the subject ID folder, the next folder should contain the patient name
+        if part == subject_id and i + 1 < len(parts) - 1:
+
+            # Try to match the Name-YYYY.MM.DD pattern on the next folder
+            match = re.match(r'^(.+?)(-\d{4}\.\d{2}\.\d{2}.*)$', parts[i + 1])
+
+            if match:
+                name = match.group(1)  # extract just the name portion (everything before the date)
+
+                # Only return the name if it differs from the subject ID
+                # (if they're the same the path was already anonymised)
+                if name != subject_id:
+                    return name
+
+    # No patient name could be extracted from this path
+    return None
+
+
+def run_check(df, id_column, path_columns):
+    """Check that patient names from original paths are absent in _anonymized columns.
+
+    Adds a <col>_check_status column for each checked column with 'pass' or 'fail'
+    per row, then returns the updated DataFrame.
+    """
+
+    # Keep a running list of every failure found across all columns
+    failures = []
+
+    # Loop over each original path column
+    for orig_col in path_columns:
+
+        # Build the expected names for the anonymized and status columns
+        anon_col   = f'{orig_col}_anonymized'   # e.g. 'nifti_path_anonymized'
+        status_col = f'{orig_col}_check_status' # e.g. 'nifti_path_check_status'
+
+        if anon_col not in df.columns:
+            print(f'\n  WARNING: No "{anon_col}" column found — skipping {orig_col}.')
+            continue
+
+        print(f'\nChecking: {orig_col} -> {anon_col}')
+        col_failures = 0
+
+        statuses = []  # will hold 'pass' or 'fail' for every row in this column
+
+        # Go through the spreadsheet one row at a time
+        for idx, row in df.iterrows():
+            original   = str(row[orig_col])   # the original file path before anonymization
+            anonymized = str(row[anon_col])    # the anonymized file path after anonymization
+            subject_id = str(row[id_column])   # the subject ID for this row (e.g. 'P1001')
+
+            # Try to extract the patient name from the original path
+            name = extract_patient_name(original, subject_id)
+
+            if name is not None and name in anonymized:
+                # The patient name was found — anonymization failed for this row
+                print(f'  FAIL row {idx}: name "{name}" still present')
+                print(f'       original  : {original}')
+                print(f'       anonymized: {anonymized}')
+                failures.append((idx, orig_col, name, anonymized))
+                col_failures += 1
+                statuses.append('fail')
+            else:
+                # The patient name was not found in the anonymized path — all good
+                statuses.append('pass')
+
+        # Write the pass/fail results as a new column in the spreadsheet
+        df[status_col] = statuses
+
+        if col_failures == 0:
+            print('  PASS — no patient names found in anonymized paths')
+
+    # Print an overall summary
+    print('\n' + '=' * 60)
+    if failures:
+        print(f'FAILED: {len(failures)} path(s) still contain patient names.')
+    else:
+        print('PASSED: All anonymized paths are free of patient names.')
+
+    return df
+
+
 def save_output(df, output_path, include_original):
     """Write the annotated DataFrame to an Excel file.
 
@@ -412,8 +506,14 @@ def main():
     # Step 7: rename (or dry-run preview) files on disk
     rename_files(df_anon, path_columns, dry_run=dry_run)
 
-    # Step 8: save the annotated DataFrame to Excel
+    # Step 8: verify that no patient names remain in the anonymized paths
+    # adds a _check_status column for each path column to the DataFrame
+    print('\n--- Anonymization Check ---')
+    df_anon = run_check(df_anon, id_column, path_columns)
+
+    # Step 9: save the annotated DataFrame (including check results) to Excel
     save_output(df_anon, output_file, include_original=INCLUDE_ORIGINAL)
+    print(f'\nOutput saved to: {output_file}')
 
 
 if __name__ == '__main__':
