@@ -61,8 +61,8 @@ HERE = Path(__file__).parent
 # Configuration
 # ---------------------------------------------------------------------------
 
-# Where to write the output file (always saved next to this script)
-OUTPUT_FILE = HERE / 'anonymized_metadata.xlsx'
+# Where to write the output file (saved in the directory one level above the scripts folder)
+OUTPUT_FILE = HERE.parent / 'anonymized_metadata.xlsx'
 
 # DRY_RUN = True  → show what would be renamed but don't touch any files
 # DRY_RUN = False → actually rename files and folders on disk

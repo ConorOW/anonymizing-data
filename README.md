@@ -30,7 +30,9 @@ The script will prompt you to:
 3. Select which columns contain file paths to anonymise
 4. Choose between a **dry run** (preview only) or a **live run** (rename files on disk)
 
-**Output:** An annotated Excel file (`anonymized_metadata.xlsx`) with the original paths, anonymised paths, and the `mv` shell command for each rename.
+**Output:** An annotated Excel file (`anonymized_metadata.xlsx`) saved in the parent directory (one level above `scripts/`), containing the original paths, anonymised paths, and the `mv` shell command for each rename.
+
+> **Note:** This script expects to be run from a `scripts/` subfolder. Input metadata files should be placed in the parent directory (one level above `scripts/`). When prompted for a file path, use `../filename.csv` or `../filename.xlsx` to point to the parent directory.
 
 **Key settings** (edit at the top of the script):
 | Variable | Default | Description |
@@ -102,6 +104,8 @@ The script will prompt you to:
 3. Select which columns contain the original file paths to check
 
 **Output:** The input `.xlsx` file is updated in-place with a `<col>_check_status` column added for each checked column, containing `pass` or `fail` per row. A summary is also printed to the terminal.
+
+> **Note:** Both scripts expect to be run from a `scripts/` subfolder. Input metadata files and output `.xlsx` files should be placed in the parent directory (one level above `scripts/`). When prompted for a file path, use `../filename.xlsx` to point to the parent directory.
 
 ---
 
