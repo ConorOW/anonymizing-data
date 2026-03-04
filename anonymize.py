@@ -196,15 +196,15 @@ def rename_files(df, columns, dry_run=True):
     # Initialize empty list
     results = []
 
-    # Loop over columns submitted for anonymization
-    for col in columns:
+    # Loop over rows first so each subject is fully processed before moving on
+    for idx, row in df.iterrows():
 
-        # Set the name for our anonymized column
-        anon_col = f'{col}_anonymized'
+        # Then loop over each path column for this row
+        for col in columns:
 
-        # Loops over a DataFrame row by row, returning index number and row's data as
-        # pandas series
-        for idx, row in df.iterrows():
+            # Set the name for our anonymized column
+            anon_col = f'{col}_anonymized'
+
             src = Path(row[col])        # original file path (absolute)
             dst = Path(row[anon_col])   # anonymized file path (absolute)
 
