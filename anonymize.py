@@ -14,9 +14,16 @@ After anonymisation:
 
 import re                  # regular expressions — used to detect the Name-YYYY.MM.DD pattern
 import glob                # file path expansion — used for tab-completion
+import json                # JSON parsing — used to extract metadata from sidecar files
 import readline            # GNU readline — enables tab-completion in input() prompts
 import pandas as pd        # Pandas for dataframe manipulation
 from pathlib import Path   # Path for working with file paths
+
+try:
+    import nibabel as nib
+    _NIBABEL_AVAILABLE = True
+except ImportError:
+    _NIBABEL_AVAILABLE = False
 
 
 # ---------------------------------------------------------------------------
@@ -68,6 +75,14 @@ DRY_RUN = True
 #                            alongside the new anonymized columns (useful for audit)
 # INCLUDE_ORIGINAL = False → drop original path columns, output only anonymized ones
 INCLUDE_ORIGINAL = True
+
+# JSON_KEYS — metadata keys to extract from JSON sidecar files in file list mode
+JSON_KEYS = [
+    'MagneticFieldStrength', 'BodyPartExamined', 'Manufacturer',
+    'ManufacturersModelName', 'SeriesDescription', 'SoftwareVersions',
+    'ProcedureStepDescription', 'SliceThickness', 'AcquisitionTime',
+    'EchoTime', 'RepetitionTime', 'FlipAngle', 'TotalReadoutTime',
+]
 
 
 # ---------------------------------------------------------------------------
@@ -290,6 +305,109 @@ def extract_patient_name(filepath, subject_id):
     return None
 
 
+def extract_subject_id_from_path(filepath):
+    """Infer the subject ID from a file path.
+
+    Walks through path components looking for a folder that is immediately
+    followed by a folder matching the Name-YYYY.MM.DD pattern. That preceding
+    folder is assumed to be the subject ID.
+
+    Returns None if the pattern cannot be found.
+    """
+    parts = Path(str(filepath)).parts
+    for i, part in enumerate(parts):
+        if i + 1 < len(parts):
+            match = re.match(r'^(.+?)(-\d{4}\.\d{2}\.\d{2}.*)$', parts[i + 1])
+            if match:
+                return part
+    return None
+
+
+def extract_json_metadata(filepath):
+    """Extract hardcoded JSON_KEYS from a JSON sidecar file.
+
+    Returns a dict with each key's value, or 'NA' if the key is absent
+    or the file cannot be read.
+    """
+    result = {key: 'NA' for key in JSON_KEYS}
+    try:
+        with open(filepath, 'r') as f:
+            data = json.load(f)
+        for key in JSON_KEYS:
+            result[key] = data.get(key, 'NA')
+    except Exception:
+        pass
+    return result
+
+
+def extract_nifti_metadata(filepath):
+    """Extract image dimensions and voxel sizes from a NIfTI file using nibabel.
+
+    Extracts dim[1-3] (voxel dimensions) and pixdim[1-4] (voxel sizes + TR).
+    Returns a dict with 'NA' for all fields if nibabel is unavailable or the
+    file cannot be read.
+    """
+    nifti_fields = ['dim1', 'dim2', 'dim3', 'pixdim1', 'pixdim2', 'pixdim3', 'pixdim4']
+    result = {f: 'NA' for f in nifti_fields}
+    if not _NIBABEL_AVAILABLE:
+        return result
+    try:
+        img = nib.load(str(filepath))
+        hdr = img.header
+        result['dim1']    = int(hdr['dim'][1])
+        result['dim2']    = int(hdr['dim'][2])
+        result['dim3']    = int(hdr['dim'][3])
+        result['pixdim1'] = float(hdr['pixdim'][1])
+        result['pixdim2'] = float(hdr['pixdim'][2])
+        result['pixdim3'] = float(hdr['pixdim'][3])
+        result['pixdim4'] = float(hdr['pixdim'][4])
+    except Exception:
+        pass
+    return result
+
+
+def process_file_list(file_list_path):
+    """Load a file list (one path per line) and build a DataFrame with metadata.
+
+    For each file:
+      - Extracts the subject ID from the path structure
+      - Extracts NIfTI header fields if the file is .nii or .nii.gz
+      - Extracts JSON_KEYS if the file is .json
+      - Sets all metadata fields to 'NA' for any other file type
+
+    Returns a DataFrame with columns: filepath, subject_id, dim1-3,
+    pixdim1-4, and all JSON_KEYS.
+    """
+    with open(file_list_path, 'r') as f:
+        filepaths = [line.strip() for line in f if line.strip()]
+
+    nifti_fields = ['dim1', 'dim2', 'dim3', 'pixdim1', 'pixdim2', 'pixdim3', 'pixdim4']
+    rows = []
+
+    for filepath in filepaths:
+        row = {'filepath': filepath}
+
+        # Infer subject ID from path structure
+        subject_id = extract_subject_id_from_path(filepath)
+        row['subject_id'] = subject_id if subject_id is not None else 'NA'
+
+        # Determine file type and extract relevant metadata
+        name_lower = Path(filepath).name.lower()
+        if name_lower.endswith('.nii.gz') or name_lower.endswith('.nii'):
+            row.update(extract_nifti_metadata(filepath))
+            row.update({key: 'NA' for key in JSON_KEYS})
+        elif name_lower.endswith('.json'):
+            row.update({f: 'NA' for f in nifti_fields})
+            row.update(extract_json_metadata(filepath))
+        else:
+            row.update({f: 'NA' for f in nifti_fields})
+            row.update({key: 'NA' for key in JSON_KEYS})
+
+        rows.append(row)
+
+    return pd.DataFrame(rows)
+
+
 def run_check(df, id_column, path_columns):
     """Check that patient names from original paths are absent in _anonymized columns.
 
@@ -459,41 +577,71 @@ def prompt_path_columns(columns):
         print(f'  Please enter valid numbers between 0 and {len(columns) - 1}.')
 
 
+def prompt_file_list():
+    """Prompt the user to enter the path to a file list (one file path per line).
+
+    Keeps re-prompting until a valid file is provided.
+    Tab-completion is available.
+    """
+    while True:
+        raw = input('Enter path to file list (one file path per line): ').strip()
+        path = Path(raw)
+        if not path.exists():
+            print(f'  File not found: {path}')
+        elif not path.is_file():
+            print(f'  That is not a file: {path}')
+        else:
+            return path
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 def main():
-    # Step 1: ask the user for the input metadata file
-    input_path = prompt_input_file()
-    df = load_metadata(input_path)
+    # Step 0: choose between metadata CSV mode and file list mode
+    print('Select mode:')
+    print('  [0] Metadata CSV mode — anonymize paths listed in a metadata spreadsheet')
+    print('  [1] File list mode   — process all files from a find-generated file list')
+    while True:
+        mode_choice = input('Enter number: ').strip()
+        if mode_choice in ('0', '1'):
+            break
+        print('  Please enter 0 or 1.')
+
+    # Step 1: load data and determine id_column / path_columns based on mode
+    if mode_choice == '0':
+        # --- Metadata CSV mode ---
+        input_path = prompt_input_file()
+        df = load_metadata(input_path)
+        columns = list(df.columns)
+        id_column    = prompt_column_choice(columns, 'Which column contains the subject ID?')
+        path_columns = prompt_path_columns(columns)
+    else:
+        # --- File list mode ---
+        file_list_path = prompt_file_list()
+        print('\nLoading file list and extracting metadata...')
+        df = process_file_list(file_list_path)
+        id_column    = 'subject_id'
+        path_columns = ['filepath']
 
     # Step 2: ask where to save the output Excel file
-    output_dir = prompt_output_dir()
+    output_dir  = prompt_output_dir()
     output_file = output_dir / 'anonymized_metadata.xlsx'
 
-    columns = list(df.columns)
-
-    # Step 3: ask which column holds the subject IDs
-    # (used to replace patient names in file paths)
-    id_column = prompt_column_choice(columns, 'Which column contains the subject ID?')
-
-    # Step 4: ask which columns contain file paths to anonymize
-    path_columns = prompt_path_columns(columns)
-
-    # Step 5: compute anonymized paths and rename commands, added as new columns
+    # Step 3: compute anonymized paths and rename commands, added as new columns
     df_anon = anonymize_columns(df, id_column, path_columns)
 
-    # Step 6: confirm whether to do a dry run or rename for real
+    # Step 4: confirm whether to do a dry run or rename for real
     print('\nRun mode:')
     print('  [0] Dry run — compute anonymized paths only, do not rename any files')
     print('  [1] Live run — rename files and folders on disk')
     while True:
-        mode = input('Enter number: ').strip()
-        if mode == '0':
+        run_mode = input('Enter number: ').strip()
+        if run_mode == '0':
             dry_run = True
             break
-        elif mode == '1':
+        elif run_mode == '1':
             dry_run = False
             break
         print('  Please enter 0 or 1.')
@@ -505,17 +653,16 @@ def main():
         confirm = input().strip()
         if confirm != 'YES':
             print('Aborted — no files were renamed.')
-            dry_run = True  # fall back to dry run so the CSV is still saved
+            dry_run = True  # fall back to dry run so the output file is still saved
 
-    # Step 7: rename (or dry-run preview) files on disk
+    # Step 5: rename (or dry-run preview) files on disk
     rename_files(df_anon, path_columns, dry_run=dry_run)
 
-    # Step 8: verify that no patient names remain in the anonymized paths
-    # adds a _check_status column for each path column to the DataFrame
+    # Step 6: verify that no patient names remain in the anonymized paths
     print('\n--- Anonymization Check ---')
     df_anon = run_check(df_anon, id_column, path_columns)
 
-    # Step 9: save the annotated DataFrame (including check results) to Excel
+    # Step 7: save the annotated DataFrame (including check results) to Excel
     save_output(df_anon, output_file, include_original=INCLUDE_ORIGINAL)
     print(f'\nOutput saved to: {output_file}')
 

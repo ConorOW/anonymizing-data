@@ -8,7 +8,7 @@ A set of Python scripts for anonymising neuroimaging datasets and visually quali
 
 ### 1. `anonymize.py` — File Path Anonymisation
 
-Reads a metadata spreadsheet (CSV or Excel) containing file paths relating to MRI data (niftis or json metadata), detects patient names embedded in those paths, and replaces them with subject IDs. Optionally renames the files and folders on disk.
+Detects patient names embedded in file paths and replaces them with subject IDs. Optionally renames files and folders on disk. Supports two input modes.
 
 **Expected path structure:**
 ```
@@ -24,6 +24,10 @@ Reads a metadata spreadsheet (CSV or Excel) containing file paths relating to MR
 python anonymize.py
 ```
 
+The script will first ask you to select a mode:
+
+**[0] Metadata CSV mode** — use when you have a spreadsheet listing the files you want to anonymise.
+
 The script will prompt you to:
 1. Provide the path to your metadata file (`.csv` or `.xlsx`)
 2. Provide the path to the directory where the output file should be saved
@@ -31,7 +35,23 @@ The script will prompt you to:
 4. Select which columns contain file paths to anonymise
 5. Choose between a **dry run** (preview only) or a **live run** (rename files on disk)
 
-**Output:** An annotated Excel file (`anonymized_metadata.xlsx`) saved to the directory you specify, containing the original paths, anonymised paths, the `mv` shell command for each rename, and a `<col>_check_status` column per path column confirming whether patient names were successfully removed (`pass` or `fail`).
+**[1] File list mode** — use when you want to process all files in a directory tree, including files not listed in any spreadsheet. Generate the file list first with:
+
+```bash
+find /path/to/directory -type f > file_list.txt
+```
+
+The script will prompt you to:
+1. Provide the path to your file list
+2. Provide the path to the directory where the output file should be saved
+3. Choose between a **dry run** (preview only) or a **live run** (rename files on disk)
+
+Subject IDs are inferred automatically from the path structure. Metadata is extracted per file type:
+- `.nii` / `.nii.gz` — image dimensions and voxel sizes from the NIfTI header
+- `.json` — acquisition metadata (field strength, manufacturer, series description, echo/repetition time, etc.)
+- All other file types — metadata fields set to `NA`
+
+**Output:** An annotated Excel file (`anonymized_metadata.xlsx`) containing file paths, subject IDs, extracted metadata, anonymised paths, the `mv` shell command for each rename, and a `_check_status` column confirming whether patient names were successfully removed (`pass` or `fail`).
 
 **Key settings** (edit at the top of the script):
 | Variable | Default | Description |
